@@ -1,12 +1,12 @@
 # Lowpoly Lap
 
-A small browser-based 3D low-poly time-trial racer inspired by the genre of arcade track racers. It uses Three.js from a CDN and needs no build step.
+A browser-based 3D time-trial racing game inspired by the look and feel of arcade track racers like PolyTrack.
 
 ## Play locally
 
-Open `index.html` in a modern browser with an internet connection. If your browser blocks ES modules from `file://`, run a local static server from this folder, for example:
+Open `index.html` in a browser, or serve the folder locally:
 
-```sh
+```bash
 python3 -m http.server 8000
 ```
 
@@ -14,14 +14,18 @@ Then visit `http://localhost:8000`.
 
 ## Controls
 
-- **W / Up:** accelerate
-- **S / Down:** brake
-- **A, D / Left, Right:** steer
-- **Space:** handbrake
-- **R:** restart countdown / run
+- W / Up Arrow: accelerate
+- S / Down Arrow: brake
+- A / D or Left / Right: steer
+- Space: drift / sharper steering
+- R: restart
 
-The game includes a procedural 3D road, a blocky player car, checkpoints, a countdown, a lap timer, and a best-time record stored in your browser.
+## Features
 
-## Publish with GitHub Pages
+- 3D low-poly track and environment
+- Ramps and boost sections
+- Checkpoint progression
+- Best time saved in localStorage
+- Smooth camera following the car
 
-In the repository, open **Settings → Pages**, choose **Deploy from a branch**, select `main` and `/ (root)`, and save. Once the Pages deployment finishes, the game will be available at `https://clynch-ux.github.io/polytrack-3d/`.
+You can publish this repository with GitHub Pages for a public play link when ready.
