@@ -1,31 +1,21 @@
-# Lowpoly Lap
+# Lowpoly Lap and Skylight Weather
 
-A browser-based 3D time-trial racing game inspired by the look and feel of arcade track racers like PolyTrack.
+This repository includes a 3D low-poly time-trial racing game and a separate weather dashboard.
 
-## Play locally
+## Weather dashboard
 
-Open `index.html` in a browser, or serve the folder locally:
+Open [`weather.html`](weather.html) in a browser, or serve this folder locally:
 
 ```bash
 python3 -m http.server 8000
 ```
 
-Then visit `http://localhost:8000`.
+Then visit `http://localhost:8000/weather.html`. Search for a city or use the location button. The dashboard shows current conditions, the next 12 hours, a 7-day forecast, temperature units, wind, humidity, precipitation, and sunrise/sunset. It fetches live data from the public [Open-Meteo API](https://open-meteo.com/) and does not require an API key. Browser geolocation requires permission and a secure context (localhost or HTTPS).
 
-## Controls
+## 3D racing game
 
-- W / Up Arrow: accelerate
-- S / Down Arrow: brake
-- A / D or Left / Right: steer
-- Space: drift / sharper steering
-- R: restart
+Open [`index.html`](index.html) in a browser. If your browser blocks ES modules from `file://`, run the local server above and visit `http://localhost:8000/`.
 
-## Features
+Controls: W / Up to accelerate, S / Down to brake, A / D or Left / Right to steer, Space to boost/drift, and R to restart.
 
-- 3D low-poly track and environment
-- Ramps and boost sections
-- Checkpoint progression
-- Best time saved in localStorage
-- Smooth camera following the car
-
-You can publish this repository with GitHub Pages for a public play link when ready.
+The game and weather page can each be published via GitHub Pages from the repository root.
