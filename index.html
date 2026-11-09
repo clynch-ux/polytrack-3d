@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lowpoly Lap — 3D Time Trial</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #101923; }
+    canvas { display: block; }
+    #hud { position: fixed; inset: 18px 18px auto; display: flex; gap: 9px; align-items: flex-start; pointer-events: none; }
+    .panel { padding: 10px 13px; border: 1px solid #ffffff26; border-radius: 10px; background: #101923c9; box-shadow: 0 5px 25px #0004; }
+    .label { color: #a9bac8; text-transform: uppercase; letter-spacing: .12em; font-size: 9px; font-weight: 800; }
+    .value { margin-top: 3px; color: #f5f7f8; font-size: 18px; font-weight: 850; font-variant-numeric: tabular-nums; }
+    #brand { position: fixed; top: 20px; right: 20px; text-align: right; color: white; text-shadow: 0 2px 10px #0008; }
+    #brand strong { font-size: 17px; letter-spacing: .16em; }
+    #brand div { margin-top: 4px; color: #c2d0d5; font-size: 11px; }
+    #hint { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: calc(100vw - 24px); padding: 10px 15px; border: 1px solid #ffffff25; border-radius: 999px; background: #101923cf; color: #e8efef; text-align: center; font-size: 12px; font-weight: 700; }
+    #toast { position: fixed; top: 31%; left: 50%; transform: translate(-50%,-50%); color: #fff; font-size: clamp(25px, 5vw, 48px); font-weight: 950; letter-spacing: .08em; text-align: center; text-shadow: 0 4px 20px #000b; pointer-events: none; }
+    @media (max-width: 600px) { #hud { inset: 10px 10px auto; gap: 5px; } .panel { padding: 8px; } .value { font-size: 15px; } #brand { top: 94px; right: 12px; } #hint { bottom: 10px; border-radius: 12px; line-height: 1.5; } }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <div class="panel"><div class="label">Time</div><div class="value" id="time">0:00.000</div></div>
+    <div class="panel"><div class="label">Best</div><div class="value" id="best">--:--.---</div></div>
+    <div class="panel"><div class="label">Speed</div><div class="value" id="speed">0 km/h</div></div>
+    <div class="panel"><div class="label">Checkpoint</div><div class="value" id="checkpoint">0 / 3</div></div>
+  </div>
+  <div id="brand"><strong>LOWPOLY LAP</strong><div>3D TIME TRIAL</div></div>
+  <div id="toast">3</div>
+  <div id="hint">W / ↑ accelerate · S / ↓ brake · A D / ← → steer · SPACE handbrake · R restart</div>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x9bc7d4);
+    scene.fog = new THREE.Fog(0x9bc7d4, 115, 370);
+
+    const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 650);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    document.body.appendChild(renderer.domElement);
+
+    scene.add(new THREE.HemisphereLight(0xe5f8ff, 0x637448, 2.0));
+    const sun = new THREE.DirectionalLight(0xfff0cf, 3.2);
+    sun.position.set(-45, 80, -25);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.left = -110; sun.shadow.camera.right = 110;
+    sun.shadow.camera.top = 110; sun.shadow.camera.bottom = -110;
+    scene.add(sun);
+
+    const mat = (color, roughness = 1) => new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
+    const grassMat = mat(0x568b50), roadMat = mat(0x42484b), edgeMat = mat(0xe7e2ca);
+    const yellowMat = mat(0xf4c842), whiteMat = mat(0xf1f0df), darkMat = mat(0x20272a);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400), grassMat);
+    ground.rotation.x = -Math.PI / 2; ground.position.y = -0.55; ground.receiveShadow = true; scene.add(ground);
+
+    // Closed, elevated spline track with a few hills and banked turns.
+    const control = [
+      [0,0,0], [0,1,-48], [16,3,-90], [58,8,-112], [100,4,-86],
+      [112,1,-36], [92,0,5], [48,5,21], [24,10,57], [35,5,102],
+      [73,1,122], [110,7,157], [96,12,204], [50,4,223], [6,1,205],
+      [-22,8,168], [-61,14,148], [-99,5,170], [-123,2,211],
+      [-159,5,217], [-182,1,187], [-173,0,145], [-139,0,119],
+      [-126,7,78], [-145,13,35], [-116,5,4], [-75,0,-13], [-44,3,-43]
+    ].map(p => new THREE.Vector3(...p));
+    const curve = new THREE.CatmullRomCurve3(control, true, 'centripetal');
+    const divisions = 900, halfWidth = 6.2;
+    const frames = curve.computeFrenetFrames(divisions, true);
+    const points = curve.getPoints(divisions);
+    const trackLength = curve.getLength();
+    const trackGroup = new THREE.Group(); scene.add(trackGroup);
+
+    function ribbon(offset, yOffset, material, width, lift = 0) {
+      const vertices = [], indices = [];
+      for (let i = 0; i <= divisions; i++) {
+        const p = points[i];
+        const side = frames.normals[i];
+        for (const sign of [-1, 1]) {
+          const q = p.clone().addScaledVector(side, offset + sign * width / 2);
+          q.y += yOffset + lift;
+          vertices.push(q.x, q.y, q.z);
+        }
+        if (i < divisions) {
+          const a = i * 2;
+          indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+      geo.setIndex(indices); geo.computeVertexNormals();
+      const mesh = new THREE.Mesh(geo, material);
+      mesh.receiveShadow = true; mesh.castShadow = false; trackGroup.add(mesh);
+      return mesh;
+    }
+    ribbon(0, -0.1, roadMat, halfWidth * 2 + 1.0, 0);
+    ribbon(-halfWidth + 0.25, 0.03, edgeMat, 0.42, 0.025);
+    ribbon(halfWidth - 0.25, 0.03, edgeMat, 0.42, 0.025);
+
+    // Dashed center line.
+    for (let i = 0; i < divisions; i += 13) {
+      const verts = [];
+      for (let j = i; j <= Math.min(i + 6, divisions); j++) {
+        const p = points[j].clone().addScaledVector(frames.normals[j], 0);
+        p.y += 0.025; verts.push(p);
+      }
+      const geo = new THREE.BufferGeometry().setFromPoints(verts);
+      const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xf3d36a }));
+      trackGroup.add(line);
+    }
+
+    // Low-poly hills around the route.
+    const hillMat = mat(0x73935b);
+    for (let i = 0; i < 75; i++) {
+      const angle = i * 2.399;
+      const radius = 65 + ((i * 47) % 115);
+      const height = 5 + ((i * 13) % 17);
+      const size = 8 + ((i * 19) % 19);
+      const hill = new THREE.Mesh(new THREE.ConeGeometry(size, height, 5), hillMat);
+      hill.position.set(Math.cos(angle) * radius - 25, height / 2 - 0.5, Math.sin(angle) * radius + 45);
+      hill.rotation.y = angle; hill.castShadow = true; hill.receiveShadow = true; scene.add(hill);
+    }
+
+    // Simple blocky roadside pines.
+    const trunkMat = mat(0x654b35), pineMat = mat(0x286347), pineLight = mat(0x397956);
+    for (let i = 0; i < 130; i++) {
+      const t = (i / 130 + 0.012) % 1;
+      const p = curve.getPointAt(t), tangent = curve.getTangentAt(t);
+      const side = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+      const sign = i % 2 ? 1 : -1;
+      p.addScaledVector(side, sign * (11 + (i % 4) * 2));
+      const tree = new THREE.Group();
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.38, 2.1, 5), trunkMat);
+      trunk.position.y = 1; trunk.castShadow = true; tree.add(trunk);
+      const crown = new THREE.Mesh(new THREE.ConeGeometry(1.75, 4.5, 5), i % 3 ? pineMat : pineLight);
+      crown.position.y = 3.8; crown.castShadow = true; tree.add(crown);
+      tree.position.copy(p); scene.add(tree);
+    }
+
+    // Start/finish gantry and three checkpoint arches.
+    const arches = [];
+    function makeArch(t, color, label) {
+      const p = curve.getPointAt(t), tangent = curve.getTangentAt(t);
+      const angle = Math.atan2(tangent.x, tangent.z);
+      const group = new THREE.Group();
+      const postGeo = new THREE.BoxGeometry(0.38, 5.2, 0.38);
+      const postMat = mat(color);
+      for (const x of [-halfWidth + 0.15, halfWidth - 0.15]) {
+        const post = new THREE.Mesh(postGeo, postMat); post.position.set(x, 2.6, 0); post.castShadow = true; group.add(post);
+      }
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(halfWidth * 2, 0.42, 0.45), postMat);
+      beam.position.y = 5.1; beam.castShadow = true; group.add(beam);
+      const sign = new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.9, 0.15), mat(0x18272a));
+      sign.position.set(0, 4.45, 0.28); group.add(sign);
+      group.position.copy(p); group.rotation.y = angle; scene.add(group);
+      arches.push({ t, group, label });
+    }
+    makeArch(0.01, 0xffd249, 'START');
+    makeArch(0.27, 0x55d6be, 'CHECK');
+    makeArch(0.52, 0x55d6be, 'CHECK');
+    makeArch(0.77, 0x55d6be, 'CHECK');
+
+    // Low-poly player car.
+    const car = new THREE.Group(); scene.add(car);
+    const bodyMat = mat(0xf04e45), glassMat = new THREE.MeshStandardMaterial({ color: 0x83c7dd, roughness: 0.35, metalness: 0.05, flatShading: true });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.68, 3.35), bodyMat);
+    body.position.y = 0.75; body.castShadow = true; car.add(body);
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.28, 0.88), mat(0xff705d));
+    nose.position.set(0, 0.68, -1.65); nose.castShadow = true; car.add(nose);
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.68, 1.55), glassMat);
+    cabin.position.set(0, 1.32, -0.12); cabin.castShadow = true; car.add(cabin);
+    const spoiler = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.15, 0.34), darkMat);
+    spoiler.position.set(0, 1.3, 1.65); car.add(spoiler);
+    const wheels = [];
+    for (const x of [-1, 1]) for (const z of [-1.05, 1.12]) {
+      const wheel = new THREE.Mesh(new THREE.BoxGeometry(0.43, 0.68, 0.82), darkMat);
+      wheel.position.set(x, 0.42, z); wheel.castShadow = true; car.add(wheel); wheels.push(wheel);
+    }
+    const lightMat = new THREE.MeshStandardMaterial({ color: 0xfff2ae, emissive: 0xffd772, emissiveIntensity: 1.2 });
+    for (const x of [-0.62, 0.62]) {
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.2, 0.08), lightMat);
+      lamp.position.set(x, 0.8, -1.71); car.add(lamp);
+    }
+
+    const state = { t: 0, speed: 0, steer: 0, lateral: 0, elapsed: 0, running: false, countdown: 3, checkpoint: 0, best: Number(localStorage.getItem('lowpoly-best') || 0), airborne: 0 };
+    const timeEl = document.querySelector('#time'), bestEl = document.querySelector('#best'), speedEl = document.querySelector('#speed'), cpEl = document.querySelector('#checkpoint'), toast = document.querySelector('#toast');
+    const pressed = new Set();
+    addEventListener('keydown', e => {
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+      pressed.add(e.key.toLowerCase());
+      if (e.key.toLowerCase() === 'r') reset();
+    });
+    addEventListener('keyup', e => pressed.delete(e.key.toLowerCase()));
+    const down = (...keys) => keys.some(k => pressed.has(k));
+    const format = seconds => {
+      const m = Math.floor(seconds / 60), s = (seconds % 60).toFixed(3).padStart(6, '0');
+      return `${m}:${s}`;
+    };
+    bestEl.textContent = state.best ? format(state.best) : '--:--.---';
+
+    function reset() {
+      state.t = 0; state.speed = 0; state.steer = 0; state.lateral = 0; state.elapsed = 0;
+      state.running = false; state.countdown = 3; state.checkpoint = 0; state.airborne = 0;
+      toast.textContent = '3'; toast.style.display = 'block';
+    }
+
+    const clock = new THREE.Clock();
+    function update(dt) {
+      if (!state.running) {
+        state.countdown -= dt;
+        toast.textContent = state.countdown > 2 ? '3' : state.countdown > 1 ? '2' : state.countdown > 0 ? '1' : 'GO!';
+        if (state.countdown <= -0.45) { state.running = true; toast.style.display = 'none'; }
+        state.t = 0;
+      } else {
+        state.elapsed += dt;
+        const throttle = down('w', 'arrowup'), brake = down('s', 'arrowdown'), handbrake = down(' ');
+        if (throttle) state.speed += 19 * dt;
+        else state.speed -= (brake ? 30 : 5.3) * dt;
+        if (brake) state.speed -= 10 * dt;
+        state.speed = THREE.MathUtils.clamp(state.speed, 0, 51);
+        const steerInput = (down('d','arrowright') ? 1 : 0) - (down('a','arrowleft') ? 1 : 0);
+        const speedRatio = 0.25 + state.speed / 50;
+        state.steer = THREE.MathUtils.damp(state.steer, steerInput, handbrake ? 11 : 7, dt);
+        state.lateral += state.steer * speedRatio * (handbrake ? 8.5 : 4.1) * dt;
+        state.lateral *= Math.exp(-(handbrake ? 0.8 : 1.5) * dt);
+        const lateralLimit = halfWidth - 1.25;
+        if (Math.abs(state.lateral) > lateralLimit) {
+          state.lateral = THREE.MathUtils.clamp(state.lateral, -lateralLimit, lateralLimit);
+          state.speed *= Math.exp(-1.7 * dt);
+        }
+        state.t = (state.t + state.speed * dt / trackLength) % 1;
+        if (state.t < 0.025 && state.elapsed > 4) {
+          if (state.checkpoint >= 3) {
+            if (!state.best || state.elapsed < state.best) {
+              state.best = state.elapsed; localStorage.setItem('lowpoly-best', String(state.best)); bestEl.textContent = format(state.best);
+            }
+            state.elapsed = 0; state.checkpoint = 0;
+            toast.textContent = 'LAP COMPLETE'; toast.style.display = 'block';
+            setTimeout(() => { if (state.running) toast.style.display = 'none'; }, 1000);
+          }
+        }
+        const nextCp = [0.27, 0.52, 0.77][state.checkpoint];
+        if (nextCp !== undefined && state.t > nextCp && state.t < nextCp + 0.012) state.checkpoint++;
+        // A small launch at a crest adds a bit of airtime and gives the car a visible bounce.
+        const p = curve.getPointAt(state.t);
+        const slope = p.y;
+        state.airborne = Math.max(0, state.airborne - dt * 2.4);
+        if (slope > 11 && state.speed > 30 && state.airborne === 0) state.airborne = 0.34;
+      }
+
+      const t = state.t;
+      const pos = curve.getPointAt(t);
+      const tangent = curve.getTangentAt(t).normalize();
+      const right = new THREE.Vector3(tangent.z, 0, -tangent.x).normalize();
+      const up = new THREE.Vector3(0, 1, 0);
+      const actual = pos.clone().addScaledVector(right, state.lateral);
+      const groundY = pos.y + 0.12;
+      const jumpY = state.airborne > 0 ? Math.sin((0.34 - state.airborne) / 0.34 * Math.PI) * 2.5 : 0;
+      car.position.set(actual.x, groundY + jumpY, actual.z);
+      car.rotation.set(0, Math.atan2(tangent.x, tangent.z) + state.steer * 0.07, -state.steer * 0.045);
+      wheels.forEach(wheel => wheel.rotation.x -= state.speed * dt * 1.7);
+
+      const cameraTarget = actual.clone().add(new THREE.Vector3(0, 1.5 + jumpY, 0));
+      const cameraPos = actual.clone().addScaledVector(tangent, -10.5).add(new THREE.Vector3(0, 5.8 + jumpY * 0.35, 0));
+      camera.position.lerp(cameraPos, 1 - Math.exp(-4.3 * dt));
+      camera.lookAt(cameraTarget.clone().addScaledVector(tangent, 5));
+
+      timeEl.textContent = format(state.elapsed);
+      speedEl.textContent = `${Math.round(state.speed * 3.6)} km/h`;
+      cpEl.textContent = `${state.checkpoint} / 3`;
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.04);
+      update(dt);
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    });
+  </script>
+</body>
+</html>
